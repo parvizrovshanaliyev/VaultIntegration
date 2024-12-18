@@ -51,7 +51,7 @@ public static class VaultExtensions
     public static IConfigurationBuilder AddVault(this IConfigurationBuilder builder, IConfiguration config)
     {
         // Retrieve the Vault configuration settings from the provided configuration.
-        var options = GetVaultConfig(config);
+        VaultConfig options = GetVaultConfig(config);
 
         // Check if the configuration type is set to "Vault".
         if (config.GetVaultConfigType() != VaultConfigTypes.Vault)
