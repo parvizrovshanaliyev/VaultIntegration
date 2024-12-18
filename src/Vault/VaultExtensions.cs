@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Vault.Models;
 
 namespace Vault;
@@ -8,6 +9,43 @@ namespace Vault;
 /// </summary>
 public static class VaultExtensions
 {
+    public static IServiceCollection ConfigureWithVault<TConfig>(
+            this IServiceCollection services,
+            IConfiguration configuration) where TConfig : class, new()
+        {
+            var config = new TConfig();
+            configuration.GetSection(typeof(TConfig).Name).Bind(config);
+    
+            if (config is IKeyMappings keyMappingsProvider)
+            {
+                var mappings = keyMappingsProvider.GetKeyMappings();
+    
+                foreach (var mapping in mappings)
+                {
+                    var vaultValue = configuration.GetVaultVariable(mapping.Key);
+                    
+                    if (!string.IsNullOrWhiteSpace(vaultValue))
+                    {
+                        var property = typeof(TConfig).GetProperty(mapping.Value);
+                        if (property != null && property.CanWrite)
+                        {
+                            property.SetValue(config, Convert.ChangeType(vaultValue, property.PropertyType));
+                        }
+                    }
+                }
+            }
+    
+            services.Configure<TConfig>(_ =>
+            {
+                foreach (var property in typeof(TConfig).GetProperties())
+                {
+                    property.SetValue(_, property.GetValue(config));
+                }
+            });
+    
+            return services;
+        }
+    
     /// <summary>
     /// Determines the type of secret management configuration to use (e.g., Vault or Other).
     /// Retrieves the type from the "VaultConfig:Type" section in the provided configuration.

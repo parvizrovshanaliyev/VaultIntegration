@@ -1,4 +1,3 @@
-
 # HashiCorp Vault Integration for .NET Applications
 
 ## Overview
@@ -16,22 +15,47 @@ dotnet add package VaultSharp
 dotnet add package Polly
 ```
 
-## Configuration
+### **`appsettings.json` Configuration**
 
-### `appsettings.json`
+When using **Vault**, the `appsettings.json` file primarily contains the Vault configuration settings. Sensitive data,
+such as connection strings and credentials, are retrieved dynamically from Vault and are not stored in the `appsettings.json`. 
+This approach enhances security by centralizing secret management.
 
-The `appsettings.json` file should contain the configuration settings for Vault, including its URL, RoleId, and SecretId. 
-You can also specify additional configuration settings, such as connection strings and Redis connection settings:
+#### **Vault Configuration (`Type: Vault`)**
+
+When Vault is used, the `appsettings.json` file includes only the settings required to connect to Vault, such as its URL, RoleId, and SecretId. Secrets like database connection strings or Redis configurations are dynamically retrieved from Vault using the specified `Path` and `MountPoint`.
+
+Example `appsettings.json` when using Vault:
 
 ```json
 {
   "VaultConfig": {
-    "Type": "Vault", 
+    "Type": "Vault",
     "Url": "https://vault.example.com",
     "RoleId": "your-role-id",
     "SecretId": "your-secret-id",
     "Path": "ns/dev/erusumSensitiveData",
     "MountPoint": "secret"
+  }
+}
+```
+
+**Key Points:**
+- Sensitive information (e.g., connection strings) is not hardcoded.
+- Vault acts as the source of truth for all secrets.
+- The `Path` defines where the secrets are stored in Vault.
+
+#### **Traditional Configuration (`Type: Other`)**
+
+When Vault is **not** used, the `appsettings.json` file stores the sensitive information directly, such as database
+connection strings and other credentials. This approach is less secure because secrets are stored in plain text.
+
+Example `appsettings.json` without Vault:
+
+```json
+{
+  "VaultConfig": {
+    "Type": "Other"
   },
   "ConnectionStrings": {
     "PostgreSql": "Server=myserver;Database=mydb;User Id=myuser;Password=mypassword;"
@@ -42,11 +66,12 @@ You can also specify additional configuration settings, such as connection strin
 }
 ```
 
-- **`Type`**: Defines the secret source. Use `"Vault"` to retrieve secrets from HashiCorp Vault, or `"Other"` to use traditional methods like `appsettings.json` or environment variables.
-- **`Url`**: The base URL of the HashiCorp Vault instance.
-- **`RoleId`** and **`SecretId`**: Credentials for Vault's AppRole authentication.
-- **`Path`**: The path in Vault where secrets are stored.
-- **`MountPoint`**: The mount point for the Key/Value secrets engine in Vault.
+**Key Points:**
+- Secrets are directly embedded in the file, which may be sufficient for local development but is insecure for production.
+- The `Type` is set to `"Other"` to indicate that secrets are not retrieved from Vault.
+- If transitioning to Vault, these sensitive keys can be removed from `appsettings.json` and stored in Vault.
+
+---
 
 ## Integrating Vault with Your Application
 
@@ -110,11 +135,6 @@ To use the PostgreSQL connection string retrieved from Vault or other sources, f
 ```csharp
 public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
 {
-    
-    // TODO: Remove this line because it is not used in the final setup.
-    //string connectionString = EnvironmentUtility.GetDatabaseConnectionString(configuration);
-    
-    
     // Get the PostgreSQL connection string from Vault or other sources.
     var postgresqlConnectionString = configuration.GetPostgreSqlConnectionString();
 
@@ -142,29 +162,17 @@ public static IServiceCollection AddPersistence(this IServiceCollection services
 The `GetPostgreSqlConnectionString` method determines whether to retrieve the connection string from Vault or fall back to appsettings or environment variables:
 
 ```csharp
-    /// <summary>
-    /// Retrieves the PostgreSQL connection string based on the current configuration type.
-    /// Uses HashiCorp Vault if the type is "Vault"; otherwise, retrieves the value from appsettings.json or environment variables.
-    /// </summary>
-    /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
-    /// <returns>The PostgreSQL connection string retrieved from Vault if applicable, or from default sources.</returns>
-    /// <remarks>
-    /// This method simplifies accessing database connection strings by centralizing the logic
-    /// for determining whether to use a secret management system or traditional configuration sources.
-    /// </remarks>
-    public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
+public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
+{
+    if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
     {
-        // Check if the configuration type is set to "Vault".
-        if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
-        {
-            Console.WriteLine("Retrieving PostgreSQL connection string from Vault.");
-            return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsPostgreSql);
-        }
-
-        // If not using Vault, retrieve the connection string from appsettings.json or environment variables.
-        Console.WriteLine("Retrieving PostgreSQL connection string from appsettings.json or environment variables.");
-        return EnvironmentUtility.GetDatabaseConnectionString(configuration);
+        Console.WriteLine("Retrieving PostgreSQL connection string from Vault.");
+        return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsPostgreSql);
     }
+
+    Console.WriteLine("Retrieving PostgreSQL connection string from appsettings.json or environment variables.");
+    return EnvironmentUtility.GetDatabaseConnectionString(configuration);
+}
 ```
 
 ### Using the Redis Connection String
@@ -173,53 +181,242 @@ To use the Redis connection string retrieved from Vault or other sources, follow
 
 ```csharp
 public static IServiceCollection AddRedisCache(this IServiceCollection services, IConfiguration configuration)
+{
+    var connectionString = configuration.GetRedisConnectionStringFromVault();
+    services.AddStackExchangeRedisCache(options =>
     {
-        // TODO Remove this line because it is not used in the final setup.
-        //var connectionString = configuration.GetRedisConnectionStrin();
-        
-        var connectionString = $"{configuration.GetRedisConnectionStringFromVault()}, 6379";
-        services.AddStackExchangeRedisCache(options =>
+        options.Configuration = connectionString;
+        options.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
         {
-            options.Configuration = connectionString;
-            options.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
-            {
-                EndPoints = { connectionString },
-                AbortOnConnectFail = false,
-                AsyncTimeout = 3000,
-                ConnectTimeout = 4000,
-                SyncTimeout = 3000,
-            };
-        });
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connectionString));
-        services.AddSingleton<IDistributedCacheService, DistributedCacheService>();
+            EndPoints = { connectionString },
+            AbortOnConnectFail = false,
+            AsyncTimeout = 3000,
+            ConnectTimeout = 4000,
+            SyncTimeout = 3000,
+        };
+    });
+    services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connectionString));
+    services.AddSingleton<IDistributedCacheService, DistributedCacheService>();
 
-        return services;
-    }
+    return services;
+}
 ```
 
-### Example: Retrieving the Redis Connection String
-The  `GetRedisConnectionStringFromVault` method determines whether to retrieve the connection string from Vault or fall back to appsettings or environment variables:
+---
+
+### **Using Configurations for IOptions Pattern**
+
+#### Add Configurations in a Centralized Way
+```csharp
+public static IServiceCollection AddConfigurations(this IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<RemoteFileConfig>(configuration.GetSection(nameof(RemoteFileConfig)));
+    services.Configure<EmailConfig>(configuration.GetSection(nameof(EmailConfig)));
+
+    return services;
+}
+```
+
+### **Example 1: Keys Matching `RemoteFileConfig` Properties**
+
+If the Vault or environment keys exactly match the class properties, the default `.Bind()` method works seamlessly.
+
+#### **Environment or Vault Example**
+```bash
+RemoteFileConfig:Host="http://localhost:9000"
+RemoteFileConfig:UserName="minioadmin"
+RemoteFileConfig:Password="minioadmin"
+RemoteFileConfig:BucketName="exampleBucket"
+```
+
+#### **Service Configuration**
+```csharp
+// Add Minio to IServiceCollection
+public static IServiceCollection AddMinio(this IServiceCollection services, IConfiguration configuration)
+{
+    services.Configure<RemoteFileConfig>(configuration.GetSection(nameof(RemoteFileConfig)));
+    
+    var config = new RemoteFileConfig();
+    configuration.GetSection(nameof(RemoteFileConfig)).Bind(config);
+
+    try
+    {
+        if (config is not null && !string.IsNullOrEmpty(config.Type))
+        {
+            if (config.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
+            {
+                services.AddMinio(config.UserName, config.Password);
+            }
+            Console.WriteLine($"Connected to: RemoteFileConfigHost - {config.Host}");
+        }
+        else
+        {
+            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could NOT read.");
+        }
+    }
+    catch (Exception ex)
+    {
+        if (string.IsNullOrEmpty(config.Type))
+        {
+            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could not read or RemoteFileConfigType variable is empty.");
+        }
+        else if (!string.IsNullOrEmpty(config.Host))
+            Console.WriteLine($"Could not connect to {config.Host}");
+
+        Console.WriteLine($"ExceptionMessage: {ex.Message}");
+    }
+    return services;
+}
+// RemoteFileConfig class
+public sealed class RemoteFileConfig
+{
+    public string Type { get; set; }
+    public int Port { get; set; }
+    public string Directory { get; set; }
+    public string BucketName { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+}
+
+#### **Using `RemoteFileConfig` in a Service**
+public sealed class MinioService : IRemoteFileAdapterService
+{
+    private readonly IMinioClient _minioClient;
+    private readonly RemoteFileConfig _config;
+    private readonly string _bucketName;
+    public MinioService(IOptions<RemoteFileConfig> config)
+    {
+        _config = config.Value;
+
+        if (config.Value.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
+        {
+            _bucketName = config.Value.BucketName;
+            _minioClient = new MinioClient()
+                                        .WithEndpoint(_config.Host)
+                                        .WithCredentials(_config.UserName, _config.Password)
+                                        .WithSSL(false)
+                                        .Build();
+        }
+    }
+}
+```
+
+### **Example 2: Keys Differing from `RemoteFileConfig` Properties**
+
+If the keys in Vault or environment variables **do not match** the property names, you need custom key mapping.
+
+#### **Environment or Vault Example**
+```bash
+RemoteFileConfigHost="http://localhost:9000"
+RemoteFileConfigUserName="minioadmin"
+RemoteFileConfigPassword="minioadmin"
+RemoteFileConfigBucketName="exampleBucket"
+```
+
+#### **Service Configuration with Custom Mapping**
+```csharp
+public static IServiceCollection AddMinio(this IServiceCollection services, IConfiguration configuration)
+{
+    // Use custom Vault-based configuration binding
+    services.ConfigureWithVault<RemoteFileConfig>(configuration);
+    
+    var config = new RemoteFileConfig();
+    configuration.GetSection(nameof(RemoteFileConfig)).Bind(config);
+    config.Host = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigHost);
+    config.UserName = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigUserName);
+    config.Password = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigPassword);
+    config.BucketName = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigBucketName);
+
+    try
+    {
+        if (config is not null && !string.IsNullOrEmpty(config.Type))
+        {
+            if (config.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
+            {
+                services.AddMinio(config.UserName, config.Password);
+            }
+            Console.WriteLine($"Connected to: RemoteFileConfigHost - {config.Host}");
+        }
+        else
+        {
+            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could NOT read.");
+        }
+    }
+    catch (Exception ex)
+    {
+        if (string.IsNullOrEmpty(config.Type))
+        {
+            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could not read or RemoteFileConfigType variable is empty.");
+        }
+        else if (!string.IsNullOrEmpty(config.Host))
+            Console.WriteLine($"Could not connect to {config.Host}");
+
+        Console.WriteLine($"ExceptionMessage: {ex.Message}");
+    }
+    return services;
+}
+
+// RemoteFileConfig class needs to implement IKeyMappings
+public sealed class RemoteFileConfig : IKeyMappings
+{
+    public string Type { get; set; }
+    public int Port { get; set; }
+    public string Directory { get; set; }
+    public string BucketName { get; set; } = string.Empty;
+    public string Host { get; set; } = string.Empty;
+    public string UserName { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+
+    public Dictionary<string, string> GetKeyMappings() => new()
+    {
+        { EnvironmentUtility.RemoteFileConfigBucketName, nameof(BucketName) },
+        { EnvironmentUtility.RemoteFileConfigHost, nameof(Host) },
+        { EnvironmentUtility.RemoteFileConfigUserName, nameof(UserName) },
+        { EnvironmentUtility.RemoteFileConfigPassword, nameof(Password) }
+    };
+}
+```
+
+#### **`ConfigureWithVault` Helper Method**
 
 ```csharp
-    /// <summary>
-    /// Retrieves the Redis connection string based on the current configuration type.
-    /// Uses HashiCorp Vault if the type is "Vault"; otherwise, retrieves the value from appsettings.json or environment variables.
-    /// </summary>
-    /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
-    /// <returns>The Redis connection string retrieved from Vault if applicable, or from default sources.</returns>
-    public static string GetRedisConnectionStringFromVault(this IConfiguration configuration)
+public static IServiceCollection ConfigureWithVault<TConfig>(
+            this IServiceCollection services,
+            IConfiguration configuration) where TConfig : class, new()
+{
+    var config = new TConfig();
+    configuration.GetSection(typeof(TConfig).Name).Bind(config);
+
+    if (config is IKeyMappings keyMappingsProvider)
     {
-        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+        var mappings = keyMappingsProvider.GetKeyMappings();
 
-        if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
+        foreach (var mapping in mappings)
         {
-            Console.WriteLine("Retrieving Redis connection string from Vault.");
-            return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsRedis);
+            var vaultValue = configuration.GetVaultVariable(mapping.Key);
+            
+            if (!string.IsNullOrWhiteSpace(vaultValue))
+            {
+                var property = typeof(TConfig).GetProperty(mapping.Value);
+                if (property != null && property.CanWrite)
+                {
+                    property.SetValue(config, Convert.ChangeType(vaultValue, property.PropertyType));
+                }
+            }
         }
-
-        Console.WriteLine("Retrieving Redis connection string from appsettings.json or environment variables.");
-        return EnvironmentUtility.GetRedisConnectionString(configuration);
     }
+
+    services.Configure<TConfig>(_ =>
+    {
+        foreach (var property in typeof(TConfig).GetProperties())
+        {
+            property.SetValue(_, property.GetValue(config));
+        }
+    });
+
+    return services;
+}
 ```
 
 ### Example: Storing Secrets in Vault
@@ -258,5 +455,7 @@ This allows your application to read these values at runtime without storing the
 
 ## Conclusion
 
-Integrating HashiCorp Vault into your .NET application allows for secure and flexible management of sensitive data like connection strings.
-By leveraging the methods provided, you can easily adapt to different environments while ensuring that your application's secrets remain protected.
+Integrating HashiCorp Vault into your .NET application allows for secure and flexible management of sensitive data like connection 
+strings. By leveraging the methods provided, you can easily adapt to different environments while ensuring that your
+application's secrets remain protected.
+

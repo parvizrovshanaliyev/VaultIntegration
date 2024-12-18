@@ -1,4 +1,5 @@
 using Vault;
+using VaultIntegration.WebApp.Configs;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -6,6 +7,9 @@ InjectSharedAppSettings(builder);
 
 // Add services to the container.
 builder.Services.AddControllers(); // Register the controllers for API endpoints
+
+builder.Services.Configure<RemoteFileConfig>(builder.Configuration.GetSection(nameof(RemoteFileConfig)));
+builder.Services.Configure<EmailConfig>(builder.Configuration.GetSection(nameof(EmailConfig)));
 
 var app = builder.Build();
 
