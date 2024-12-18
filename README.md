@@ -13,13 +13,15 @@ This guide demonstrates how to integrate HashiCorp Vault into a .NET application
 
 ```bash
 dotnet add package VaultSharp
+dotnet add package Polly
 ```
 
 ## Configuration
 
 ### `appsettings.json`
 
-The `appsettings.json` file should contain the configuration settings for Vault, including its URL, RoleId, and SecretId. You can also specify additional configuration settings, such as connection strings and Redis connection settings:
+The `appsettings.json` file should contain the configuration settings for Vault, including its URL, RoleId, and SecretId. 
+You can also specify additional configuration settings, such as connection strings and Redis connection settings:
 
 ```json
 {
@@ -108,6 +110,12 @@ To use the PostgreSQL connection string retrieved from Vault or other sources, f
 ```csharp
 public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
 {
+    
+    // TODO: Remove this line because it is not used in the final setup.
+    //string connectionString = EnvironmentUtility.GetDatabaseConnectionString(configuration);
+    
+    
+    // Get the PostgreSQL connection string from Vault or other sources.
     var postgresqlConnectionString = configuration.GetPostgreSqlConnectionString();
 
     services.AddDbContext<eRusumContext>((provider, options) =>
@@ -159,6 +167,61 @@ The `GetPostgreSqlConnectionString` method determines whether to retrieve the co
     }
 ```
 
+### Using the Redis Connection String
+
+To use the Redis connection string retrieved from Vault or other sources, follow this example:
+
+```csharp
+public static IServiceCollection AddRedisCache(this IServiceCollection services, IConfiguration configuration)
+    {
+        // TODO Remove this line because it is not used in the final setup.
+        //var connectionString = configuration.GetRedisConnectionStrin();
+        
+        var connectionString = $"{configuration.GetRedisConnectionStringFromVault()}, 6379";
+        services.AddStackExchangeRedisCache(options =>
+        {
+            options.Configuration = connectionString;
+            options.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
+            {
+                EndPoints = { connectionString },
+                AbortOnConnectFail = false,
+                AsyncTimeout = 3000,
+                ConnectTimeout = 4000,
+                SyncTimeout = 3000,
+            };
+        });
+        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connectionString));
+        services.AddSingleton<IDistributedCacheService, DistributedCacheService>();
+
+        return services;
+    }
+```
+
+### Example: Retrieving the Redis Connection String
+The  `GetRedisConnectionStringFromVault` method determines whether to retrieve the connection string from Vault or fall back to appsettings or environment variables:
+
+```csharp
+    /// <summary>
+    /// Retrieves the Redis connection string based on the current configuration type.
+    /// Uses HashiCorp Vault if the type is "Vault"; otherwise, retrieves the value from appsettings.json or environment variables.
+    /// </summary>
+    /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
+    /// <returns>The Redis connection string retrieved from Vault if applicable, or from default sources.</returns>
+    public static string GetRedisConnectionStringFromVault(this IConfiguration configuration)
+    {
+        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
+
+        if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
+        {
+            Console.WriteLine("Retrieving Redis connection string from Vault.");
+            return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsRedis);
+        }
+
+        Console.WriteLine("Retrieving Redis connection string from appsettings.json or environment variables.");
+        return EnvironmentUtility.GetRedisConnectionString(configuration);
+    }
+```
+
 ### Example: Storing Secrets in Vault
 
 To store a connection string in Vault using the Key/Value secrets engine, use the following command:
@@ -195,4 +258,5 @@ This allows your application to read these values at runtime without storing the
 
 ## Conclusion
 
-Integrating HashiCorp Vault into your .NET application allows for secure and flexible management of sensitive data like connection strings. By leveraging the methods provided, you can easily adapt to different environments while ensuring that your application's secrets remain protected.
+Integrating HashiCorp Vault into your .NET application allows for secure and flexible management of sensitive data like connection strings.
+By leveraging the methods provided, you can easily adapt to different environments while ensuring that your application's secrets remain protected.

@@ -62,7 +62,7 @@ public static class VaultExtensions
     /// </summary>
     /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
     /// <returns>The PostgreSQL connection string.</returns>
-    public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
+    public static string GetPostgreSqlConnectionStringFromVault(this IConfiguration configuration)
     {
         if (configuration == null) throw new ArgumentNullException(nameof(configuration));
 
@@ -81,7 +81,7 @@ public static class VaultExtensions
     /// </summary>
     /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
     /// <returns>The Redis connection string.</returns>
-    public static string GetRedisConnectionString(this IConfiguration configuration)
+    public static string GetRedisConnectionStringFromVault(this IConfiguration configuration)
     {
         if (configuration == null) throw new ArgumentNullException(nameof(configuration));
 
