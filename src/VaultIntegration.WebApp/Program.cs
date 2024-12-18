@@ -2,7 +2,7 @@ using Vault;
 
 var builder = WebApplication.CreateBuilder(args);
 
-InjectSharedAppSetings(builder);
+InjectSharedAppSettings(builder);
 
 // Add services to the container.
 builder.Services.AddControllers(); // Register the controllers for API endpoints
@@ -27,7 +27,7 @@ app.MapControllers(); // Map the controllers
 app.Run();
 
 
-void InjectSharedAppSetings(WebApplicationBuilder builder)
+void InjectSharedAppSettings(WebApplicationBuilder builder)
 {
     IWebHostEnvironment env = builder.Environment;
 
@@ -44,5 +44,6 @@ void InjectSharedAppSetings(WebApplicationBuilder builder)
 
     builder.Configuration.AddEnvironmentVariables();
         
+    // Add Vault to the configuration builder
     builder.Configuration.AddVault(builder.Configuration);
 }

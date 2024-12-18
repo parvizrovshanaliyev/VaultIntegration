@@ -134,23 +134,29 @@ public static IServiceCollection AddPersistence(this IServiceCollection services
 The `GetPostgreSqlConnectionString` method determines whether to retrieve the connection string from Vault or fall back to appsettings or environment variables:
 
 ```csharp
-/// <summary>
-/// Retrieves the PostgreSQL connection string based on the current configuration type.
-/// Uses HashiCorp Vault if the type is "Vault"; otherwise, retrieves the value from appsettings.json or environment variables.
-/// </summary>
-/// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
-/// <returns>The PostgreSQL connection string retrieved from Vault if applicable, or from default sources.</returns>
-public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
-{
-    if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
+    /// <summary>
+    /// Retrieves the PostgreSQL connection string based on the current configuration type.
+    /// Uses HashiCorp Vault if the type is "Vault"; otherwise, retrieves the value from appsettings.json or environment variables.
+    /// </summary>
+    /// <param name="configuration">The <see cref="IConfiguration"/> instance used to retrieve the connection string.</param>
+    /// <returns>The PostgreSQL connection string retrieved from Vault if applicable, or from default sources.</returns>
+    /// <remarks>
+    /// This method simplifies accessing database connection strings by centralizing the logic
+    /// for determining whether to use a secret management system or traditional configuration sources.
+    /// </remarks>
+    public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
     {
-        Console.WriteLine("Retrieving PostgreSQL connection string from Vault.");
-        return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsPostgreSql);
-    }
+        // Check if the configuration type is set to "Vault".
+        if (configuration.GetVaultConfigType() == VaultConfigTypes.Vault)
+        {
+            Console.WriteLine("Retrieving PostgreSQL connection string from Vault.");
+            return configuration.GetVaultVariable(VaultSecretKeys.ConnectionStringsPostgreSql);
+        }
 
-    Console.WriteLine("Retrieving PostgreSQL connection string from appsettings.json or environment variables.");
-    return EnvironmentUtility.GetDatabaseConnectionString(configuration);
-}
+        // If not using Vault, retrieve the connection string from appsettings.json or environment variables.
+        Console.WriteLine("Retrieving PostgreSQL connection string from appsettings.json or environment variables.");
+        return EnvironmentUtility.GetDatabaseConnectionString(configuration);
+    }
 ```
 
 ### Example: Storing Secrets in Vault

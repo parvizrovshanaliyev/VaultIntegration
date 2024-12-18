@@ -1,7 +1,5 @@
-﻿using System.Diagnostics;
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Vault.Models;
-using VaultSharp.V1.Commons;
 
 namespace Vault;
 
@@ -18,8 +16,8 @@ public class VaultConfigurationProvider : ConfigurationProvider
     /// <exception cref="ArgumentNullException">Thrown when client or config is null.</exception>
     public VaultConfigurationProvider(IHashiCorpVaultClient client, VaultConfig config)
     {
-        var vaultConfig = config ?? throw new ArgumentNullException(nameof(config));
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        var vaultConfig = config ?? throw new ArgumentNullException(nameof(config));
         _basePrefix = NormalizeBasePath(vaultConfig.Path);
     }
 
@@ -41,63 +39,54 @@ public class VaultConfigurationProvider : ConfigurationProvider
         {
             // Fetch secrets from Vault using the configured client.
             var secretResponse = await _client.GetSecretsAsync().ConfigureAwait(false);
-
-            // Process each key-value pair in the retrieved secrets.
-            foreach (var kvp in secretResponse.Data.Data)
+            
+            if (secretResponse?.Data?.Data == null || !secretResponse.Data.Data.Any())
             {
-                var key = kvp.Key.Replace('/', ':');
-                data[key] = kvp.Value?.ToString() ?? throw new KeyNotFoundException(
-                    $"Key '{kvp.Key}' found but value is null in Vault at path '{path}'");
+                Console.WriteLine($"No secrets found in Vault at path '{path}'.");
+                return;
+            }
+
+            // Process the key-value pairs in the retrieved secrets
+            foreach (var (key, value) in secretResponse.Data.Data)
+            {
+                if (value == null)
+                {
+                    Console.WriteLine($"Key '{key}' found but value is null in Vault at path '{path}'.");
+                    continue;
+                }
+
+                var normalizedKey = NormalizeKey(key);
+                data[normalizedKey] = value.ToString();
             }
         }
         catch (Exception ex)
         {
-            Trace.WriteLine($"Error retrieving secrets from Vault at path '{path}': {ex}");
+            Console.WriteLine($"Error retrieving secrets from Vault at path '{path}': {ex.Message}");
         }
 
-        // Store the retrieved data in the configuration provider.
-        Data = data!;
+        Data = data;
     }
-
+    
     /// <summary>
-    /// Adds a secret to the data dictionary if it exists in the Vault response.
+    /// Normalizes a key by replacing '/' with ':' for consistent configuration formatting.
     /// </summary>
-    /// <param name="secretResponse">The response from Vault containing the secret data.</param>
-    /// <param name="secretItem">The specific secret item key to add to the dictionary.</param>
-    /// <param name="data">The dictionary to store the secret values.</param>
-    /// <param name="path">The path in Vault where the secrets are stored.</param>
-    private static void AddSecretToDictionary(Secret<SecretData> secretResponse, string secretItem, Dictionary<string, string> data, string? path)
+    /// <param name="key">The original key.</param>
+    /// <returns>The normalized key.</returns>
+    private static string NormalizeKey(string key)
     {
-        try
-        {
-            // Attempt to retrieve the specific secret item from the response.
-            if (secretResponse.Data.Data.TryGetValue(secretItem, out var value))
-            {
-                var key = secretItem.Replace('/', ':');
-                data[key] = value?.ToString() ?? throw new KeyNotFoundException(
-                    $"Key '{secretItem}' found but value is null in Vault at path '{path}'");
-            }
-            else
-            {
-                Trace.WriteLine($"Key '{secretItem}' not found in Vault at path '{path}'");
-            }
-        }
-        catch (Exception ex)
-        {
-            Trace.WriteLine($"Error processing key '{secretItem}' from Vault: {ex}");
-        }
+        return key.Replace('/', ':');
     }
 
     /// <summary>
     /// Normalizes the base path, ensuring it ends with a slash.
     /// </summary>
     /// <param name="keyPrefix">The base path to normalize.</param>
-    /// <returns>The normalized base path, ensuring a trailing slash.</returns>
+    /// <returns>The normalized base path.</returns>
     private static string? NormalizeBasePath(string? keyPrefix)
     {
         if (string.IsNullOrWhiteSpace(keyPrefix))
         {
-            return string.Empty;
+            return null;
         }
 
         return keyPrefix.EndsWith("/") ? keyPrefix : $"{keyPrefix}/";
