@@ -18,6 +18,7 @@ public class VaultConfigurationProvider : ConfigurationProvider
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
         var vaultConfig = config ?? throw new ArgumentNullException(nameof(config));
+        
         _basePrefix = NormalizeBasePath(vaultConfig.Path);
     }
 

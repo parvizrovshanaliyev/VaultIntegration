@@ -13,9 +13,17 @@
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": true,
-      "applicationUrl": "http://localhost:5146",
+      "applicationUrl": "http://localhost:5000",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        
+        
+        "VAULT_URL": "",
+        "VAULT_ROLE_ID": "",
+        "VAULT_SECRET_ID": "",
+        "VAULT_TYPE": "Vault",
+        "VAULT_PATH": "",
+        "VAULT_MOUNT_POINT": ""
       }
     },
     "https": {

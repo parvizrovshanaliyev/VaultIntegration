@@ -1,31 +1,36 @@
-# HashiCorp Vault Integration for .NET Applications
+# **Integrating HashiCorp Vault with .NET Applications**
 
-## Overview
+## **Overview**
 
-This guide demonstrates how to integrate HashiCorp Vault into a .NET application for managing sensitive configuration settings such as database connection strings, API keys, and other secrets. By using Vault, you can securely store and retrieve secrets, minimizing the risk of hardcoding sensitive information in your application's configuration files.
+This guide explains how to securely integrate HashiCorp Vault into a .NET application.
+Vault enables centralized management of sensitive configuration settings such as database connection strings,
+API keys, and other secrets. By leveraging Vault, you eliminate the need to hardcode sensitive information in your application,
+significantly improving security.
 
-## Prerequisites
+---
 
-- A running instance of [HashiCorp Vault](https://www.vaultproject.io/).
-- A .NET 7 application (or higher).
-- The VaultSharp library for interacting with Vault. You can install it via NuGet:
+## **Prerequisites**
 
-```bash
-dotnet add package VaultSharp
-dotnet add package Polly
-```
+To successfully implement Vault integration, ensure you have the following:
 
-### **`appsettings.json` Configuration**
+1. **HashiCorp Vault**: A running instance of [HashiCorp Vault](https://www.vaultproject.io/).
+2. **.NET 7 or Higher**: This guide assumes you are using a .NET 7 application.
+3. **VaultSharp Library**: A .NET client library for interacting with Vault. Install it via NuGet:
 
-When using **Vault**, the `appsettings.json` file primarily contains the Vault configuration settings. Sensitive data,
-such as connection strings and credentials, are retrieved dynamically from Vault and are not stored in the `appsettings.json`. 
-This approach enhances security by centralizing secret management.
+   ```bash
+   dotnet add package VaultSharp
+   dotnet add package Polly
+   ```
 
-#### **Vault Configuration (`Type: Vault`)**
+---
 
-When Vault is used, the `appsettings.json` file includes only the settings required to connect to Vault, such as its URL, RoleId, and SecretId. Secrets like database connection strings or Redis configurations are dynamically retrieved from Vault using the specified `Path` and `MountPoint`.
+## **Configuration Options**
 
-Example `appsettings.json` when using Vault:
+### **Option 1: Using `appsettings.json`**
+
+In environments where using environment variables isn't feasible, you can include Vault configuration in `appsettings.json`. Ensure sensitive data, such as database connection strings, are **not** stored in the file.
+
+Example `appsettings.json` for Vault:
 
 ```json
 {
@@ -34,69 +39,57 @@ Example `appsettings.json` when using Vault:
     "Url": "https://vault.example.com",
     "RoleId": "your-role-id",
     "SecretId": "your-secret-id",
-    "Path": "ns/dev/erusumSensitiveData",
+    "Path": "ns/dev/SensitiveData",
     "MountPoint": "secret"
   }
 }
 ```
 
-**Key Points:**
-- Sensitive information (e.g., connection strings) is not hardcoded.
-- Vault acts as the source of truth for all secrets.
-- The `Path` defines where the secrets are stored in Vault.
+### **Option 2: Using Environment Variables**
 
-#### **Traditional Configuration (`Type: Other`)**
+To enhance security, especially in production, provide Vault configuration through environment variables:
 
-When Vault is **not** used, the `appsettings.json` file stores the sensitive information directly, such as database
-connection strings and other credentials. This approach is less secure because secrets are stored in plain text.
-
-Example `appsettings.json` without Vault:
-
-```json
-{
-  "VaultConfig": {
-    "Type": "Other"
-  },
-  "ConnectionStrings": {
-    "PostgreSql": "Server=myserver;Database=mydb;User Id=myuser;Password=mypassword;"
-  },
-  "Redis": {
-    "ConnectionString": "localhost:6379"
-  }
-}
+```bash
+export VAULT_URL="https://vault.example.com"
+export VAULT_ROLE_ID="your-role-id"
+export VAULT_SECRET_ID="your-secret-id"
+export VAULT_PATH="ns/dev/SensitiveData"
+export VAULT_MOUNT_POINT="secret"
+export VAULT_TYPE="Vault"
 ```
 
-**Key Points:**
-- Secrets are directly embedded in the file, which may be sufficient for local development but is insecure for production.
-- The `Type` is set to `"Other"` to indicate that secrets are not retrieved from Vault.
-- If transitioning to Vault, these sensitive keys can be removed from `appsettings.json` and stored in Vault.
+This approach minimizes the risk of accidental exposure in source control.
 
 ---
 
-## Integrating Vault with Your Application
+## **Integration Workflow**
 
-### `Program.cs` Setup
+### **Step 1: Setting Up in `Program.cs`**
 
-In your `Program.cs`, integrate Vault with the configuration builder and inject the database context:
+Integrate Vault into the application configuration pipeline and register services:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-// Add shared settings and Vault integration
-builder.InjectSharedAppSetings();
+// Inject shared settings and integrate Vault
+builder.InjectSharedAppSettings();
 
-// Configure services, including setting up the database context using the connection string from Vault or other sources.
+// Add services
 builder.Services.AddPersistence(builder.Configuration);
+builder.Services.AddInfrastructure(builder.Configuration);
+
+// Configure Vault settings
+builder.Services.Configure<VaultConfig>(builder.Configuration.GetSection(nameof(VaultConfig)));
 
 var app = builder.Build();
 ```
 
-### `InjectSharedAppSetings` Method
+### **Step 2: Implementing `InjectSharedAppSettings`**
 
-The `InjectSharedAppSetings` method adds shared settings and integrates Vault into the configuration builder:
+The `InjectSharedAppSettings` method configures shared settings and integrates Vault into the configuration pipeline:
 
 ```csharp
-public static void InjectSharedAppSetings(WebApplicationBuilder builder, AppFolders appFolder = AppFolders.APIs)
+public static void InjectSharedAppSettings(WebApplicationBuilder builder, AppFolders appFolder = AppFolders.APIs)
 {
     IWebHostEnvironment env = builder.Environment;
     string sharedSettingsFolderPath = Path.Combine(env.ContentRootPath, "..", "SharedFiles");
@@ -112,54 +105,72 @@ public static void InjectSharedAppSetings(WebApplicationBuilder builder, AppFold
            .SetBasePath(env.ContentRootPath)
            .AddJsonFile("appsettings.json", optional: true)
            .AddJsonFile("SharedAppSettings.json", optional: true)
-           .AddJsonFile(environmentSettings, optional: true, true)
+           .AddJsonFile(environmentSettings, optional: true, reloadOnChange: true)
            .AddJsonFile($"appsettings.{EnvironmentUtility.GetEnvironmentVariable()}.json", optional: true)
-           .AddJsonFile($"SharedAppSettings.{EnvironmentUtility.GetEnvironmentVariable()}.json", optional: true, true);
+           .AddJsonFile($"SharedAppSettings.{EnvironmentUtility.GetEnvironmentVariable()}.json", optional: true, reloadOnChange: true)
+           .AddEnvironmentVariables();
 
-    builder.Configuration.AddEnvironmentVariables();
-
-    // Add Vault to the configuration builder
-    builder.Configuration.AddVault(builder.Configuration);
+    // Add Vault as a configuration source
+    builder.Configuration.AddVaultConfigurationSource(new VaultConfig
+    {
+        Type = builder.Configuration["Vault:Type"] ?? Environment.GetEnvironmentVariable("VAULT_TYPE"),
+        Url = builder.Configuration["Vault:Url"] ?? Environment.GetEnvironmentVariable("VAULT_URL"),
+        RoleId = builder.Configuration["Vault:RoleId"] ?? Environment.GetEnvironmentVariable("VAULT_ROLE_ID"),
+        SecretId = builder.Configuration["Vault:SecretId"] ?? Environment.GetEnvironmentVariable("VAULT_SECRET_ID"),
+        Path = builder.Configuration["Vault:Path"] ?? Environment.GetEnvironmentVariable("VAULT_PATH"),
+        MountPoint = builder.Configuration["Vault:MountPoint"] ?? Environment.GetEnvironmentVariable("VAULT_MOUNT_POINT"),
+    });
 }
 ```
 
-This method:
-- Loads shared settings and environment-specific JSON files.
-- Adds environment variables to the configuration.
-- Integrates Vault, allowing secrets to be fetched securely.
+---
 
-### Using the PostgreSQL Connection String
+## **Debugging Guide**
 
-To use the PostgreSQL connection string retrieved from Vault or other sources, follow this example:
+To trace the flow of Vault integration and diagnose issues, debug the following components:
+
+### 1. **`AddVaultConfigurationSource`**
+
+This method initializes the Vault client and adds the configuration source. Debug the provided options:
 
 ```csharp
-public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
-{
-    // Get the PostgreSQL connection string from Vault or other sources.
-    var postgresqlConnectionString = configuration.GetPostgreSqlConnectionString();
-
-    services.AddDbContext<eRusumContext>((provider, options) =>
-    {
-        options.UseNpgsql(postgresqlConnectionString, options =>
-        {
-            options.CommandTimeout(10); // Set a timeout for database commands (in seconds).
-        });
-
-        options.EnableSensitiveDataLogging(true); // Enable detailed logging (for development purposes only).
-    });
-
-    AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
-
-    services.AddScoped(typeof(IRepository<>), typeof(EFRepository<>));
-    services.AddScoped(typeof(IEFUnitOfWork), typeof(EFUnitOfWork));
-
-    return services;
-}
+Console.WriteLine($"Vault URL: {options.Url}");
+Console.WriteLine($"Vault RoleId: {options.RoleId}");
+Console.WriteLine($"Vault Path: {options.Path}");
 ```
 
-### Example: Retrieving the PostgreSQL Connection String
+### 2. **`VaultConfigurationSource`**
 
-The `GetPostgreSqlConnectionString` method determines whether to retrieve the connection string from Vault or fall back to appsettings or environment variables:
+`VaultConfigurationSource` provides configuration data retrieved from Vault. Ensure it's initialized correctly:
+
+```csharp
+Console.WriteLine("VaultConfigurationSource initialized.");
+```
+
+### 3. **`VaultConfigurationProvider`**
+
+This provider fetches secrets from Vault. Debug secret retrieval:
+
+```csharp
+Console.WriteLine($"Fetching secret: Path={path}, Key={key}");
+```
+
+### 4. **`HashiCorpVaultClient`**
+
+Ensure the client authenticates with Vault and retrieves secrets properly:
+
+```csharp
+Console.WriteLine("Authenticating with Vault...");
+Console.WriteLine($"Vault Token: {authResponse.Auth.ClientToken}");
+```
+
+---
+
+## **Using Secrets from Vault**
+
+### **Example: PostgreSQL Connection String**
+
+Retrieve the PostgreSQL connection string from Vault or fallback sources:
 
 ```csharp
 public static string GetPostgreSqlConnectionString(this IConfiguration configuration)
@@ -175,28 +186,21 @@ public static string GetPostgreSqlConnectionString(this IConfiguration configura
 }
 ```
 
-### Using the Redis Connection String
-
-To use the Redis connection string retrieved from Vault or other sources, follow this example:
+### **Example: Configuring the Database Context**
 
 ```csharp
-public static IServiceCollection AddRedisCache(this IServiceCollection services, IConfiguration configuration)
+public static IServiceCollection AddPersistence(this IServiceCollection services, IConfiguration configuration)
 {
-    var connectionString = configuration.GetRedisConnectionStringFromVault();
-    services.AddStackExchangeRedisCache(options =>
+    var connectionString = configuration.GetPostgreSqlConnectionString();
+
+    services.AddDbContext<eRusumContext>((provider, options) =>
     {
-        options.Configuration = connectionString;
-        options.ConfigurationOptions = new StackExchange.Redis.ConfigurationOptions
-        {
-            EndPoints = { connectionString },
-            AbortOnConnectFail = false,
-            AsyncTimeout = 3000,
-            ConnectTimeout = 4000,
-            SyncTimeout = 3000,
-        };
+        options.UseNpgsql(connectionString, o => o.CommandTimeout(10));
+        options.EnableSensitiveDataLogging(true);
     });
-    services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(connectionString));
-    services.AddSingleton<IDistributedCacheService, DistributedCacheService>();
+
+    services.AddScoped(typeof(IRepository<>), typeof(EFRepository<>));
+    services.AddScoped(typeof(IEFUnitOfWork), typeof(EFUnitOfWork));
 
     return services;
 }
@@ -204,258 +208,85 @@ public static IServiceCollection AddRedisCache(this IServiceCollection services,
 
 ---
 
-### **Using Configurations for IOptions Pattern**
+### ** Using Secrets with the `IOptions` Pattern**
 
-#### Add Configurations in a Centralized Way
+When integrating with classes using the `IOptions` pattern, you can seamlessly map secrets to class properties if the secret keys are named according to the property structure.
+
+#### **Example Configuration Class**
+
 ```csharp
-public static IServiceCollection AddConfigurations(this IServiceCollection services, IConfiguration configuration)
+public class RemoteFileConfig
 {
-    services.Configure<RemoteFileConfig>(configuration.GetSection(nameof(RemoteFileConfig)));
-    services.Configure<EmailConfig>(configuration.GetSection(nameof(EmailConfig)));
-
-    return services;
-}
-```
-
-### **Example 1: Keys Matching `RemoteFileConfig` Properties**
-
-If the Vault or environment keys exactly match the class properties, the default `.Bind()` method works seamlessly.
-
-#### **Environment or Vault Example**
-```bash
-RemoteFileConfig:Host="http://localhost:9000"
-RemoteFileConfig:UserName="minioadmin"
-RemoteFileConfig:Password="minioadmin"
-RemoteFileConfig:BucketName="exampleBucket"
-```
-
-#### **Service Configuration**
-```csharp
-// Add Minio to IServiceCollection
-public static IServiceCollection AddMinio(this IServiceCollection services, IConfiguration configuration)
-{
-    services.Configure<RemoteFileConfig>(configuration.GetSection(nameof(RemoteFileConfig)));
-    
-    var config = new RemoteFileConfig();
-    configuration.GetSection(nameof(RemoteFileConfig)).Bind(config);
-
-    try
-    {
-        if (config is not null && !string.IsNullOrEmpty(config.Type))
-        {
-            if (config.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
-            {
-                services.AddMinio(config.UserName, config.Password);
-            }
-            Console.WriteLine($"Connected to: RemoteFileConfigHost - {config.Host}");
-        }
-        else
-        {
-            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could NOT read.");
-        }
-    }
-    catch (Exception ex)
-    {
-        if (string.IsNullOrEmpty(config.Type))
-        {
-            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could not read or RemoteFileConfigType variable is empty.");
-        }
-        else if (!string.IsNullOrEmpty(config.Host))
-            Console.WriteLine($"Could not connect to {config.Host}");
-
-        Console.WriteLine($"ExceptionMessage: {ex.Message}");
-    }
-    return services;
-}
-// RemoteFileConfig class
-public sealed class RemoteFileConfig
-{
-    public string Type { get; set; }
-    public int Port { get; set; }
-    public string Directory { get; set; }
-    public string BucketName { get; set; } = string.Empty;
     public string Host { get; set; } = string.Empty;
     public string UserName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
+    public string BucketName { get; set; } = string.Empty;
 }
+```
 
-#### **Using `RemoteFileConfig` in a Service**
-public sealed class MinioService : IRemoteFileAdapterService
+#### **Mapping Vault Secrets to Class Properties**
+
+If the Vault secrets are stored with keys matching the class property names (e.g., `RemoteFileConfig:Host`, `RemoteFileConfig:UserName`), the `.Bind()` method in `IOptions` will automatically populate the class:
+
+```bash
+vault kv put secret/ns/dev/SensitiveData RemoteFileConfig:Host="http://localhost:9000" RemoteFileConfig:UserName="minioadmin" RemoteFileConfig:Password="minioadmin" RemoteFileConfig:BucketName="exampleBucket"
+```
+
+#### **Registering the Configuration in `Program.cs`**
+
+```csharp
+builder.Services.Configure<RemoteFileConfig>(builder.Configuration.GetSection(nameof(RemoteFileConfig)));
+```
+
+#### **Using the Configuration**
+
+```csharp
+public class MinioService
 {
-    private readonly IMinioClient _minioClient;
     private readonly RemoteFileConfig _config;
-    private readonly string _bucketName;
+
     public MinioService(IOptions<RemoteFileConfig> config)
     {
         _config = config.Value;
-
-        if (config.Value.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
-        {
-            _bucketName = config.Value.BucketName;
-            _minioClient = new MinioClient()
-                                        .WithEndpoint(_config.Host)
-                                        .WithCredentials(_config.UserName, _config.Password)
-                                        .WithSSL(false)
-                                        .Build();
-        }
+        Console.WriteLine($"Host: {_config.Host}, UserName: {_config.UserName}");
     }
 }
 ```
 
-### **Example 2: Keys Differing from `RemoteFileConfig` Properties**
+This approach ensures proper binding and eliminates manual mapping of secrets.
 
-If the keys in Vault or environment variables **do not match** the property names, you need custom key mapping.
+---
 
-#### **Environment or Vault Example**
-```bash
-RemoteFileConfigHost="http://localhost:9000"
-RemoteFileConfigUserName="minioadmin"
-RemoteFileConfigPassword="minioadmin"
-RemoteFileConfigBucketName="exampleBucket"
-```
+## **Storing and Accessing Secrets**
 
-#### **Service Configuration with Custom Mapping**
-```csharp
-public static IServiceCollection AddMinio(this IServiceCollection services, IConfiguration configuration)
-{
-    // Use custom Vault-based configuration binding
-    services.ConfigureWithVault<RemoteFileConfig>(configuration);
-    
-    var config = new RemoteFileConfig();
-    configuration.GetSection(nameof(RemoteFileConfig)).Bind(config);
-    config.Host = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigHost);
-    config.UserName = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigUserName);
-    config.Password = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigPassword);
-    config.BucketName = configuration.GetVaultVariable(EnvironmentUtility.RemoteFileConfigBucketName);
+### **Storing Secrets in Vault**
 
-    try
-    {
-        if (config is not null && !string.IsNullOrEmpty(config.Type))
-        {
-            if (config.Type.Equals(nameof(RemoteFileConfigTypes.Minio), StringComparison.OrdinalIgnoreCase))
-            {
-                services.AddMinio(config.UserName, config.Password);
-            }
-            Console.WriteLine($"Connected to: RemoteFileConfigHost - {config.Host}");
-        }
-        else
-        {
-            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could NOT read.");
-        }
-    }
-    catch (Exception ex)
-    {
-        if (string.IsNullOrEmpty(config.Type))
-        {
-            Console.WriteLine($"Error: SharedAppSetting.{EnvironmentUtility.GetEnvironmentVariable()}.json could not read or RemoteFileConfigType variable is empty.");
-        }
-        else if (!string.IsNullOrEmpty(config.Host))
-            Console.WriteLine($"Could not connect to {config.Host}");
-
-        Console.WriteLine($"ExceptionMessage: {ex.Message}");
-    }
-    return services;
-}
-
-// RemoteFileConfig class needs to implement IKeyMappings
-public sealed class RemoteFileConfig : IKeyMappings
-{
-    public string Type { get; set; }
-    public int Port { get; set; }
-    public string Directory { get; set; }
-    public string BucketName { get; set; } = string.Empty;
-    public string Host { get; set; } = string.Empty;
-    public string UserName { get; set; } = string.Empty;
-    public string Password { get; set; } = string.Empty;
-
-    public Dictionary<string, string> GetKeyMappings() => new()
-    {
-        { EnvironmentUtility.RemoteFileConfigBucketName, nameof(BucketName) },
-        { EnvironmentUtility.RemoteFileConfigHost, nameof(Host) },
-        { EnvironmentUtility.RemoteFileConfigUserName, nameof(UserName) },
-        { EnvironmentUtility.RemoteFileConfigPassword, nameof(Password) }
-    };
-}
-```
-
-#### **`ConfigureWithVault` Helper Method**
-
-```csharp
-public static IServiceCollection ConfigureWithVault<TConfig>(
-            this IServiceCollection services,
-            IConfiguration configuration) where TConfig : class, new()
-{
-    var config = new TConfig();
-    configuration.GetSection(typeof(TConfig).Name).Bind(config);
-
-    if (config is IKeyMappings keyMappingsProvider)
-    {
-        var mappings = keyMappingsProvider.GetKeyMappings();
-
-        foreach (var mapping in mappings)
-        {
-            var vaultValue = configuration.GetVaultVariable(mapping.Key);
-            
-            if (!string.IsNullOrWhiteSpace(vaultValue))
-            {
-                var property = typeof(TConfig).GetProperty(mapping.Value);
-                if (property != null && property.CanWrite)
-                {
-                    property.SetValue(config, Convert.ChangeType(vaultValue, property.PropertyType));
-                }
-            }
-        }
-    }
-
-    services.Configure<TConfig>(_ =>
-    {
-        foreach (var property in typeof(TConfig).GetProperties())
-        {
-            property.SetValue(_, property.GetValue(config));
-        }
-    });
-
-    return services;
-}
-```
-
-### Example: Storing Secrets in Vault
-
-To store a connection string in Vault using the Key/Value secrets engine, use the following command:
+Store sensitive data in Vault using the CLI:
 
 ```bash
-vault kv put secret/ns/dev/erusumSensitiveData ConnectionStringsPostgreSql="Server=myserver;Database=mydb;User Id=myuser;Password=mypassword;"
+vault kv put secret/ns/dev/SensitiveData ConnectionStringsPostgreSql="Server=myserver;Database=mydb;User Id=myuser;Password=mypassword;"
 ```
 
-### Example: Retrieving Secrets Using `curl`
+### **Retrieving Secrets**
 
-Verify the stored secrets using `curl`:
+Test retrieval using `curl`:
 
 ```bash
-curl --header "X-Vault-Token: YOUR_VAULT_TOKEN" --request GET https://vault.example.com/v1/secret/data/ns/dev/erusumSensitiveData
+curl --header "X-Vault-Token: YOUR_VAULT_TOKEN" --request GET https://vault.example.com/v1/secret/data/ns/dev/SensitiveData
 ```
 
-### Setting Environment Variables
+---
 
-For security, set environment variables for `VaultConfig` parameters:
+## **Benefits of Vault Integration**
 
-```bash
-export VAULT_URL="https://vault.example.com"
-export VAULT_ROLE_ID="your-role-id"
-export VAULT_SECRET_ID="your-secret-id"
-```
+- **Enhanced Security**: Centralizes sensitive information and minimizes exposure risk.
+- **Environment Flexibility**: Easily switch between environments (e.g., development, staging, production).
+- **Dynamic Secret Management**: Rotate secrets without modifying application code.
 
-This allows your application to read these values at runtime without storing them in `appsettings.json`.
+---
 
-## Benefits of Using Vault
+## **Conclusion**
 
-- **Enhanced Security**: Secrets are stored and managed in a central, secure location, minimizing the risk of exposing sensitive data in configuration files.
-- **Flexible Configuration**: Switch between using Vault and traditional methods by changing a single configuration value.
-- **Environment-Specific Management**: Use different sources for secrets in development, staging, and production environments.
+Integrating HashiCorp Vault into your .NET application ensures secure, centralized, and scalable secret management. With proper debugging and configuration practices, you can confidently adapt to various environments while maintaining strict security protocols.
 
-## Conclusion
-
-Integrating HashiCorp Vault into your .NET application allows for secure and flexible management of sensitive data like connection 
-strings. By leveraging the methods provided, you can easily adapt to different environments while ensuring that your
-application's secrets remain protected.
-
+--- 

@@ -57,6 +57,7 @@ public static class VaultExtensions
         if (configuration == null) throw new ArgumentNullException(nameof(configuration));
 
         var typeString = configuration.GetSection($"{nameof(VaultConfig)}:{nameof(VaultConfig.Type)}").Value;
+        typeString ??= EnvironmentUtility.GetEnvironmentVariable(EnvironmentUtility.VAULT_TYPE);
 
         if (Enum.TryParse(typeString, true, out VaultConfigTypes configType))
         {
@@ -65,6 +66,7 @@ public static class VaultExtensions
         }
 
         Console.WriteLine("VaultConfig type not specified or invalid. Defaulting to 'Other'.");
+        
         return VaultConfigTypes.Other;
     }
 
@@ -72,28 +74,27 @@ public static class VaultExtensions
     /// Adds Vault-based secret retrieval to the configuration builder if the configuration type is set to "Vault".
     /// </summary>
     /// <param name="builder">The <see cref="IConfigurationBuilder"/> used to build the application's configuration.</param>
-    /// <param name="config">The existing configuration instance used to retrieve Vault settings.</param>
+    /// <param name="options"></param>
     /// <returns>The updated <see cref="IConfigurationBuilder"/>.</returns>
-    public static IConfigurationBuilder AddVault(this IConfigurationBuilder builder, IConfiguration config)
+    public static IConfigurationBuilder AddVaultConfigurationSource(this IConfigurationBuilder builder, VaultConfig options)
     {
-        if (builder == null) throw new ArgumentNullException(nameof(builder));
-        if (config == null) throw new ArgumentNullException(nameof(config));
-
-        var options = GetVaultConfig(config);
-
-        if (config.GetVaultConfigType() != VaultConfigTypes.Vault)
+        options.Validate();
+        
+        if (options.Type != VaultConfigTypes.Vault.ToString())
         {
             Console.WriteLine("Vault type not selected. Using default configuration settings.");
             return builder;
         }
-
+        
         var client = new HashiCorpVaultClient(options);
 
         builder.Add(new VaultConfigurationSource(client, options));
 
         Console.WriteLine("Vault configuration has been successfully added.");
+        
         return builder;
     }
+    
 
     /// <summary>
     /// Retrieves the PostgreSQL connection string based on the current configuration type.
@@ -159,52 +160,5 @@ public static class VaultExtensions
 
         Console.WriteLine($"[Vault Retrieval] Successfully retrieved value for '{name}'.");
         return value;
-    }
-
-    /// <summary>
-    /// Retrieves and binds the Vault configuration settings from the configuration source.
-    /// </summary>
-    /// <param name="configuration">The configuration instance.</param>
-    /// <returns>The configured <see cref="VaultConfig"/>.</returns>
-    private static VaultConfig GetVaultConfig(this IConfiguration configuration)
-    {
-        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
-
-        var vaultConfig = new VaultConfig
-        {
-            Url = EnvironmentUtility.GetEnvironmentVariable(EnvironmentUtility.VAULT_URL),
-            RoleId = EnvironmentUtility.GetEnvironmentVariable(EnvironmentUtility.VAULT_ROLE_ID),
-            SecretId = EnvironmentUtility.GetEnvironmentVariable(EnvironmentUtility.VAULT_SECRET_ID)
-        };
-
-        if (!string.IsNullOrWhiteSpace(vaultConfig.Url) &&
-            !string.IsNullOrWhiteSpace(vaultConfig.RoleId) &&
-            !string.IsNullOrWhiteSpace(vaultConfig.SecretId))
-        {
-            Console.WriteLine("Using Vault Config from environment variables.");
-            BindNonSensitiveValues(configuration, vaultConfig);
-        }
-        else
-        {
-            Console.WriteLine("Using Vault Config from appsettings.json.");
-            configuration.GetSection(nameof(VaultConfig)).Bind(vaultConfig);
-        }
-
-        Console.WriteLine($"Vault Config: URL: {vaultConfig.Url}");
-        return vaultConfig;
-    }
-
-    /// <summary>
-    /// Binds non-sensitive values from the configuration to the provided VaultConfig object.
-    /// </summary>
-    private static void BindNonSensitiveValues(IConfiguration configuration, VaultConfig vaultConfig)
-    {
-        if (configuration == null) throw new ArgumentNullException(nameof(configuration));
-        if (vaultConfig == null) throw new ArgumentNullException(nameof(vaultConfig));
-
-        var section = configuration.GetSection(nameof(VaultConfig));
-        vaultConfig.Path = section.GetValue<string>(nameof(VaultConfig.Path));
-        vaultConfig.MountPoint = section.GetValue<string>(nameof(VaultConfig.MountPoint));
-        vaultConfig.Type = section.GetValue<string>(nameof(VaultConfig.Type));
     }
 }

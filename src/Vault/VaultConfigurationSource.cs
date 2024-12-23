@@ -8,12 +8,12 @@ public class VaultConfigurationSource : IConfigurationSource
     /// <summary>
     /// The configuration settings for Vault.
     /// </summary>
-    public VaultConfig Options { get; }
+    private readonly VaultConfig _options;
 
     /// <summary>
     /// The Vault client used for retrieving configuration values.
     /// </summary>
-    public IHashiCorpVaultClient Client { get; }
+    private readonly IHashiCorpVaultClient _client;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="VaultConfigurationSource"/> class.
@@ -23,8 +23,8 @@ public class VaultConfigurationSource : IConfigurationSource
     /// <exception cref="ArgumentNullException">Thrown when client or options are null.</exception>
     public VaultConfigurationSource(IHashiCorpVaultClient client, VaultConfig options)
     {
-        Client = client ?? throw new ArgumentNullException(nameof(client), "Vault client cannot be null.");
-        Options = options ?? throw new ArgumentNullException(nameof(options), "Vault configuration options cannot be null.");
+        _client = client ?? throw new ArgumentNullException(nameof(client), "Vault client cannot be null.");
+        _options = options ?? throw new ArgumentNullException(nameof(options), "Vault configuration options cannot be null.");
     }
 
     /// <summary>
@@ -39,6 +39,6 @@ public class VaultConfigurationSource : IConfigurationSource
             throw new ArgumentNullException(nameof(builder), "Configuration builder cannot be null.");
         }
 
-        return new VaultConfigurationProvider(Client, Options);
+        return new VaultConfigurationProvider(_client, _options);
     }
 }

@@ -33,10 +33,15 @@ public static class EnvironmentUtility
     public readonly static string RemoteFileConfigUserName = nameof(RemoteFileConfigUserName);
     public readonly static string RemoteFileConfigPassword = nameof(RemoteFileConfigPassword);
     public readonly static string RemoteFileConfigBucketName = nameof(RemoteFileConfigBucketName);
+
+    public const string VAULT_TYPE = nameof(VAULT_TYPE);
+    public const string VAULT_URL = nameof(VAULT_URL);
+    public const string VAULT_ROLE_ID = nameof(VAULT_ROLE_ID);
+    public const string VAULT_SECRET_ID = nameof(VAULT_SECRET_ID);
+    public const string VAULT_PATH = nameof(VAULT_PATH);
+    public const string VAULT_MOUNT_POINT = nameof(VAULT_MOUNT_POINT);
     
-    public readonly static string VAULT_URL = nameof(VAULT_URL);
-    public readonly static string VAULT_ROLE_ID = nameof(VAULT_ROLE_ID);
-    public readonly static string VAULT_SECRET_ID = nameof(VAULT_SECRET_ID);
+
 
 
     public const string ASPNETCORE_ENVIRONMENT = nameof(ASPNETCORE_ENVIRONMENT);
