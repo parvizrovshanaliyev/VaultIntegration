@@ -1,8 +1,6 @@
-﻿namespace VaultIntegration.WebApp.Configs;
+﻿using Minio;
 
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
-using Minio;
+namespace VaultIntegration.WebApp.Infrastructure.MinIO;
 
 public static class ConfigureServices
 {

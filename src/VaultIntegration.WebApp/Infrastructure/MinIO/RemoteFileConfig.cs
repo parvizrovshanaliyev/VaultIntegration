@@ -1,6 +1,4 @@
-﻿using Vault;
-
-namespace VaultIntegration.WebApp.Configs;
+﻿namespace VaultIntegration.WebApp.Infrastructure.MinIO;
 
 public sealed class RemoteFileConfig 
 {

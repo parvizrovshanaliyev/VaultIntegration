@@ -1,5 +1,6 @@
 ﻿using VaultIntegration.WebApp.Configs;
 using VaultIntegration.WebApp.Infrastructure.Caching;
+using VaultIntegration.WebApp.Infrastructure.MinIO;
 
 namespace VaultIntegration.WebApp.Infrastructure
 {
